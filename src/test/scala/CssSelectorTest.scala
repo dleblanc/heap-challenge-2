@@ -72,18 +72,21 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
 
       case Tag(name) =>
 
-        val (thisValue, searchSelectors) = if (name == (tree \ "tag").as[String]) {
-          (if (selectors.tail.isEmpty) 1 else 0, selectors.tail)
+        val searchSelectors = if (name == (tree \ "tag").as[String]) {
+          selectors.tail
         } else {
-          (0, selectors)
+          selectors
         }
 
-        thisValue + (tree \ "children")
-          .toOption
-          .flatMap { children => Option(children.as[Seq[JsValue]].map(recurComparison(searchSelectors, _))) }
-          .getOrElse(Nil)
-          .sum
-
+        if (searchSelectors == Nil) {
+          1
+        } else {
+          (tree \ "children")
+            .toOption
+            .flatMap { children => Option(children.as[Seq[JsValue]].map(recurComparison(searchSelectors, _))) }
+            .getOrElse(Nil)
+            .sum
+        }
 
       case Id(id) =>
 
