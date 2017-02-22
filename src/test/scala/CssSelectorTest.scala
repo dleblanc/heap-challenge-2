@@ -7,43 +7,6 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
 
   private[this] val tokenAndOptionalCombinatorRegex =  """([#.\w]+)(\s+>?\s*)?""".r
 
-  private[this] val firstInput =
-    """
-      |{
-      |  "hierarchy": {
-      |    "tag": "html",
-      |    "children": [
-      |      {
-      |        "tag": "body",
-      |        "classes": [
-      |          "mobile"
-      |        ],
-      |        "children": [
-      |          {
-      |            "tag": "div",
-      |            "id": "content",
-      |            "children": [
-      |              {
-      |                "tag": "p"
-      |              },
-      |              {
-      |                "tag": "p"
-      |              }
-      |            ]
-      |          }
-      |        ]
-      |      }
-      |    ]
-      |  },
-      |  "tests": [
-      |    "p",
-      |    "div p",
-      |    "#content p"
-      |  ]
-      |}
-    """.stripMargin
-
-
   sealed trait SelectorNode
 
   final case class Tag(name: String) extends SelectorNode
@@ -107,7 +70,7 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
 
 //      case Nil => 1 // Return 1 if we've exhausted all our selectors??
 
-      case  Tag(name) =>
+      case Tag(name) =>
 
         val (thisValue, searchSelectors) = if (name == (tree \ "tag").as[String]) {
           (if (selectors.tail.isEmpty) 1 else 0, selectors.tail)
@@ -130,11 +93,13 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
           (0, selectors)
         }
 
-        (tree \ "children")
+        thisValue + (tree \ "children")
           .toOption
           .flatMap { children => Option(children.as[Seq[JsValue]].map(recurComparison(searchSelectors, _))) }
           .getOrElse(Nil)
           .sum
+
+      case Parent() => 0
 
 //      case _ => -1
     }
@@ -164,6 +129,41 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
 
   test("First test") {
 
+    val firstInput = """
+      |{
+      |  "hierarchy": {
+      |    "tag": "html",
+      |    "children": [
+      |      {
+      |        "tag": "body",
+      |        "classes": [
+      |          "mobile"
+      |        ],
+      |        "children": [
+      |          {
+      |            "tag": "div",
+      |            "id": "content",
+      |            "children": [
+      |              {
+      |                "tag": "p"
+      |              },
+      |              {
+      |                "tag": "p"
+      |              }
+      |            ]
+      |          }
+      |        ]
+      |      }
+      |    ]
+      |  },
+      |  "tests": [
+      |    "p",
+      |    "div p",
+      |    "#content p"
+      |  ]
+      |}
+    """.stripMargin
+    
     val firstJson = Json.parse(firstInput)
 
     val dom = (firstJson \ "hierarchy").get
@@ -171,10 +171,6 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
     val opt = (dom \ "children")
       .toOption
         .map(_.as[Seq[JsValue]])
-
-    opt
-      .foreach(println _)
-
 
     val testSelectors: Seq[String] = (firstJson \ "tests").as[Seq[String]]
 
@@ -187,14 +183,101 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
     // expect: [2,2,2]
   }
 
-  test("Narrow in on first test") {
+  test("Second test") {
 
-    val firstJson = Json.parse(firstInput)
+    val input =
+      """
+        |{
+        |  "hierarchy": {
+        |    "tag": "h",
+        |    "id": "foo",
+        |    "children": [
+        |      {
+        |        "tag": "a",
+        |        "id": "foo"
+        |      },
+        |      {
+        |        "tag": "b",
+        |        "id": "foo",
+        |        "children": [
+        |          {
+        |            "tag": "c",
+        |            "id": "foo"
+        |          }
+        |        ]
+        |      }
+        |    ]
+        |  },
+        |  "tests": [
+        |    "h #foo",
+        |    "#foo",
+        |    "#foo #foo",
+        |    "h > #foo",
+        |    "#foo > #foo"
+        |  ]
+        |}
+      """.stripMargin
 
-    val dom = (firstJson \ "hierarchy").get
+    val parsedJson = Json.parse(input)
 
-    countMatches("#content p", dom) should equal (2)
+    val dom = (parsedJson \ "hierarchy").get
+
+    val opt = (dom \ "children")
+      .toOption
+      .map(_.as[Seq[JsValue]])
+
+    val testSelectors: Seq[String] = (parsedJson \ "tests").as[Seq[String]]
+
+    val results = testSelectors.map {selector =>
+      countMatches(selector, dom)
+    }
+
+    results should equal (List(3,4,3,2,3))
 
   }
 
+
+
+  test("Narrow in on specific test") {
+
+    val input =
+      """
+        |{
+        |  "hierarchy": {
+        |    "tag": "h",
+        |    "id": "foo",
+        |    "children": [
+        |      {
+        |        "tag": "a",
+        |        "id": "foo"
+        |      },
+        |      {
+        |        "tag": "b",
+        |        "id": "foo",
+        |        "children": [
+        |          {
+        |            "tag": "c",
+        |            "id": "foo"
+        |          }
+        |        ]
+        |      }
+        |    ]
+        |  },
+        |  "tests": [
+        |    "h #foo",
+        |    "#foo",
+        |    "#foo #foo",
+        |    "h > #foo",
+        |    "#foo > #foo"
+        |  ]
+        |}
+      """.stripMargin
+
+    val json = Json.parse(input)
+
+    val dom = (json \ "hierarchy").get
+
+    countMatches("#foo", dom) should equal (4)
+
+  }
 }
