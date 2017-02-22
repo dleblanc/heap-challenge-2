@@ -51,10 +51,11 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
   final case class Id(id: String) extends SelectorNode
   final case class WithClass(className: String) extends SelectorNode
 
-  def splitByTokens(selector: String): Seq[String] = {
+  def splitSelectorByTokens(selector: String): Seq[String] = {
 
     val matcher = tokenAndOptionalCombinatorRegex.pattern.matcher(selector)
 
+    // Match a "selector with optional combinator" below
     val tokens = mutable.MutableList[String]()
     while (matcher.find) {
       tokens += matcher.group(1)
@@ -67,7 +68,7 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
     tokens
   }
 
-  def parseTokens(tokens: Seq[String]): Seq[SelectorNode] = {
+  def parseSelectorTokens(tokens: Seq[String]): Seq[SelectorNode] = {
 
     tokens
       .map {
@@ -85,29 +86,79 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
 
   def countMatches(selector: String, dom: JsValue): Int = {
 
-    val parsedSelector = splitByTokens(selector)
-    0
+    val parsedSelector = parseSelectorTokens(splitSelectorByTokens(selector))
+
+//    // Special case if we're given an "html/body" DOM.
+//    if ((dom \ "tag").as[String] == "html") {
+//      (dom \ "children" \ "children"
+//    }
+
+    recurComparison(parsedSelector, dom)
+  }
+
+  def recurComparison(selectors: Seq[SelectorNode], tree: JsValue): Int = {
+
+    if (selectors.isEmpty) {
+      return 1 // TODO: do in the pattern match below
+    }
+
+    // Return the # of selectors that matched
+    selectors.head match {
+
+//      case Nil => 1 // Return 1 if we've exhausted all our selectors??
+
+      case  Tag(name) =>
+
+        val (thisValue, searchSelectors) = if (name == (tree \ "tag").as[String]) {
+          (if (selectors.tail.isEmpty) 1 else 0, selectors.tail)
+        } else {
+          (0, selectors)
+        }
+
+        thisValue + (tree \ "children")
+          .toOption
+          .flatMap { children => Option(children.as[Seq[JsValue]].map(recurComparison(searchSelectors, _))) }
+          .getOrElse(Nil)
+          .sum
+
+
+      case Id(id) =>
+
+        val (thisValue, searchSelectors) = if ((tree \ "id").toOption.exists(_.as[String] == id)) {
+          (if (selectors.tail.isEmpty) 1 else 0, selectors.tail)
+        } else {
+          (0, selectors)
+        }
+
+        (tree \ "children")
+          .toOption
+          .flatMap { children => Option(children.as[Seq[JsValue]].map(recurComparison(searchSelectors, _))) }
+          .getOrElse(Nil)
+          .sum
+
+//      case _ => -1
+    }
   }
 
   test("SplitByTokens should return only the parent combinator when surrounded with spaces") {
-    splitByTokens("a > b") should equal (Seq("a", ">", "b"))
+    splitSelectorByTokens("a > b") should equal (Seq("a", ">", "b"))
   }
 
   test("SplitByTokens handles simple token") {
-    splitByTokens("a") should equal (Seq("a"))
+    splitSelectorByTokens("a") should equal (Seq("a"))
   }
 
   test("SplitByTokens handles hash sign") {
-    splitByTokens("a #b") should equal (Seq("a", "#b"))
+    splitSelectorByTokens("a #b") should equal (Seq("a", "#b"))
   }
 
   test("SplitByTokens handles dot in selector") {
-    splitByTokens("a .b") should equal (Seq("a", ".b"))
+    splitSelectorByTokens("a .b") should equal (Seq("a", ".b"))
   }
 
   test("parse tokens converts to expected objects") {
 
-    parseTokens(Seq("a", "#b", ">", ".c")) should equal (Seq(Tag("a"), Id("b"), Parent(), WithClass("c")))
+    parseSelectorTokens(Seq("a", "#b", ">", ".c")) should equal (Seq(Tag("a"), Id("b"), Parent(), WithClass("c")))
   }
 
 
@@ -117,13 +168,33 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
 
     val dom = (firstJson \ "hierarchy").get
 
-    val testCases: Seq[String] = (firstJson \ "tests")
-      .as[Seq[String]]
+    val opt = (dom \ "children")
+      .toOption
+        .map(_.as[Seq[JsValue]])
 
-    val results = testCases.map(i => countMatches(i, dom))
+    opt
+      .foreach(println _)
+
+
+    val testSelectors: Seq[String] = (firstJson \ "tests").as[Seq[String]]
+
+    val results = testSelectors.map {selector =>
+      countMatches(selector, dom)
+    }
 
     results should equal (List(2,2,2))
 
     // expect: [2,2,2]
   }
+
+  test("Narrow in on first test") {
+
+    val firstJson = Json.parse(firstInput)
+
+    val dom = (firstJson \ "hierarchy").get
+
+    countMatches("#content p", dom) should equal (2)
+
+  }
+
 }
