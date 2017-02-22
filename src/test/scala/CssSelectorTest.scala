@@ -67,6 +67,22 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
     tokens
   }
 
+  def parseTokens(tokens: Seq[String]): Seq[SelectorNode] = {
+
+    tokens
+      .map {
+        // NOTE: could use extractors here too
+
+        case i if i.startsWith("#") => Id(i.replace("#",""))
+
+        case i if i.startsWith(".") => WithClass(i.replace(".", ""))
+
+        case ">" => Parent()
+
+        case i => Tag(i)
+      }
+  }
+
   def countMatches(selector: String, dom: JsValue): Int = {
 
     val parsedSelector = splitByTokens(selector)
@@ -89,27 +105,7 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
     splitByTokens("a .b") should equal (Seq("a", ".b"))
   }
 
-
-  def parseTokens(tokens: Seq[String]): Seq[SelectorNode] = {
-
-    tokens
-      .map {
-        // NOTE: could use extractors here too
-
-        case i if i.startsWith("#") => Id(i.replace("#",""))
-
-        case i if i.startsWith(".") => WithClass(i.replace(".", ""))
-
-        case ">" => Parent()
-
-        case i => Tag(i)
-      }
-  }
-
   test("parse tokens converts to expected objects") {
-//    parseTokens(Seq("a", "#b", ">", ".c")) should equal (Seq(Tag("a'")))
-
-    parseTokens(Seq("a")) should equal (Seq(Tag("a")))
 
     parseTokens(Seq("a", "#b", ">", ".c")) should equal (Seq(Tag("a"), Id("b"), Parent(), WithClass("c")))
   }
@@ -121,13 +117,10 @@ class CssSelectorTest extends FunSuite with ShouldMatchers {
 
     val dom = (firstJson \ "hierarchy").get
 
-    val testCases = (firstJson \ "tests")
-      .as[JsArray]
-      value
+    val testCases: Seq[String] = (firstJson \ "tests")
+      .as[Seq[String]]
 
-    println(testCases)
-
-    val results = testCases.value.map(i => countMatches(i.toString(), dom))
+    val results = testCases.map(i => countMatches(i, dom))
 
     results should equal (List(2,2,2))
 
